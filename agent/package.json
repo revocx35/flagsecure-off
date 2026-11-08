@@ -1,0 +1,15 @@
+{
+  "name": "flagsecure-agent",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Frida agent injected into system_server to ignore FLAG_SECURE",
+  "scripts": {
+    "build": "frida-compile index.js -o ../app/src/main/assets/agent.js -c"
+  },
+  "dependencies": {
+    "frida-java-bridge": "7.0.13"
+  },
+  "devDependencies": {
+    "frida-compile": "19.1.0"
+  }
+}

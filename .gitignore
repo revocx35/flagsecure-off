@@ -1,0 +1,28 @@
+# Build outputs
+build/
+.gradle/
+*.apk
+*.aab
+*.so
+node_modules/
+third_party/frida/
+
+# Generated from agent/ at build time
+app/src/main/assets/agent.js
+app/src/main/jniLibs/
+
+# Local config and secrets
+local.properties
+.env
+.env.*
+*.jks
+*.keystore
+keystore.properties
+
+# IDE and logs
+.idea/
+*.iml
+.vscode/
+.DS_Store
+*.log
+captures/
