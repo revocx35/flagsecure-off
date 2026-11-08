@@ -10,13 +10,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.MaterialTheme.colorScheme
@@ -61,6 +64,7 @@ private fun ScreenContent(modifier: Modifier = Modifier) {
     val scope = rememberCoroutineScope()
     var rooted by remember { mutableStateOf<Boolean?>(null) }
     var state by remember { mutableStateOf<UiState>(UiState.Idle) }
+    var showRestart by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) { rooted = Injector.hasRoot() }
 
@@ -119,11 +123,42 @@ private fun ScreenContent(modifier: Modifier = Modifier) {
             Text(if (state is UiState.Working) "Injecting…" else "Disable FLAG_SECURE now")
         }
 
+        OutlinedButton(
+            onClick = { showRestart = true },
+            enabled = state !is UiState.Working && rooted != false,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("Re-enable FLAG_SECURE (restart UI)")
+        }
+
         when (val s = state) {
             is UiState.Working -> CircularProgressIndicator()
             is UiState.Done -> ResultView(s.result)
             UiState.Idle -> Unit
         }
+    }
+
+    if (showRestart) {
+        AlertDialog(
+            onDismissRequest = { showRestart = false },
+            title = { Text("Re-enable FLAG_SECURE?") },
+            text = {
+                Text(
+                    "This restarts the system interface to turn FLAG_SECURE back on. The screen " +
+                        "goes black and apps relaunch (~10–20s); nothing is lost. A normal reboot " +
+                        "does the same thing.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showRestart = false
+                    scope.launch { Injector.restore() }
+                }) { Text("Restart now") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRestart = false }) { Text("Cancel") }
+            },
+        )
     }
 }
 

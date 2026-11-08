@@ -28,9 +28,12 @@ LSPosed module, for devices (e.g. Galaxy Z Fold7 on One UI 8) where Zygisk does 
 
 3. **App** (`MainActivity.kt`, `Injector.kt`)
    - `MainActivity` — Compose UI (Material 3, dynamic color). Shows a warning, a root-status line,
-     one Apply button, and the parsed hook results.
+     an Apply button, a "Re-enable FLAG_SECURE (restart UI)" button (behind a confirm dialog), and
+     the parsed hook results.
    - `Injector` — the only code that touches root:
      - `hasRoot()` runs `su -c id -u` and checks for uid 0.
+     - `restore()` re-enables FLAG_SECURE by restarting the framework (`su -c 'stop; start'`,
+       detached): eternalized hooks can't be unloaded, so a soft reboot is the clean revert.
      - `apply()` copies `agent.js` from assets into `filesDir`, locates
        `nativeLibraryDir/libfridainject.so`, then runs, via `su -c`:
        `PID=$(pidof system_server); libfridainject.so -p "$PID" -s agent.js -e`

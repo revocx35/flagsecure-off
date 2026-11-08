@@ -144,6 +144,20 @@ object Injector {
         )
     }
 
+    /**
+     * Re-enable FLAG_SECURE by restarting the Android framework. The eternalized Frida hooks live
+     * inside system_server and cannot be cleanly unloaded, so the only reliable revert short of a
+     * full reboot is a framework restart ("soft reboot"): `stop; start` tears down and relaunches
+     * system_server and every app (this one included), ~10–20s, after which the original
+     * FLAG_SECURE behavior is back. Fired detached because this process is killed mid-call.
+     */
+    suspend fun restore(): Unit = withContext(Dispatchers.IO) {
+        runCatching {
+            ProcessBuilder("su", "-c", "nohup sh -c 'sleep 1; stop; start' >/dev/null 2>&1 &").start()
+        }
+        Unit
+    }
+
     /** Run one command in a root shell and return its combined output. */
     private fun runSu(command: String): String {
         val process = ProcessBuilder("su", "-c", command)
