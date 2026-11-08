@@ -47,15 +47,11 @@ Java.perform(() => {
       console.log("fso:skipped " + cls + "." + method);
     }
   };
-  // NOTE: WindowState.isSecureLocked is deliberately NOT hooked. It is called per-frame during
-  // window relayout/transitions, and hooking it makes ART deoptimize it permanently (slow even
-  // after the hook is removed) — the source of the residual lag. The methods below are only called
-  // when a screenshot/capture actually happens (cold), so they add no per-frame cost. If some app
-  // still blacks out screenshots with these alone, isSecureLocked has to come back (with the lag),
-  // or the framework (services.jar) must be patched instead.
-  prepare("com.android.server.wm.WmScreenshotController", "canBeScreenshotTarget", true); // One UI
-  prepare("android.window.ScreenCaptureInternal$ScreenshotHardwareBuffer", "containsSecureLayers", false); // 16+
-  prepare("android.window.ScreenCapture$ScreenshotHardwareBuffer", "containsSecureLayers", false); // 14-15
+  // Least-laggy config for temp-rooted One UI: hook ONLY WindowState.isSecureLocked. Field data
+  // showed the capture-path hooks (canBeScreenshotTarget / containsSecureLayers) cause MORE lag on
+  // One UI than isSecureLocked, so they are dropped. Any Frida hook still deoptimizes its method
+  // (unavoidable at runtime), but this hooks just one, so it is the lightest build that still works.
+  prepare("com.android.server.wm.WindowState", "isSecureLocked", false);
 
   let installed = null;
   const setHooks = (on) => {
