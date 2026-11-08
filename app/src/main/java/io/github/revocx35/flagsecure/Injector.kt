@@ -18,6 +18,13 @@ object Injector {
     private const val AGENT_ASSET = "agent.js"
     private const val BINARY_NAME = "libfridainject.so"
 
+    // While this flag file exists the loaded agent pauses the bypass (real FLAG_SECURE behavior).
+    // Removing it resumes the bypass. The agent polls it every 500 ms, so toggling needs no restart.
+    private const val PAUSE_FILE = "/data/local/tmp/fso_paused"
+
+    // Holds the boot_id of the boot we injected on, so we re-inject at most once per boot.
+    private const val BOOT_MARKER = "/data/local/tmp/fso_boot"
+
     data class Hook(val target: String, val applied: Boolean)
 
     data class Result(
@@ -57,6 +64,7 @@ object Injector {
                 }
             }
         }
+        val reused = output.lineSequence().any { it.trim() == "fso:reused" }
         val appliedCount = hooks.count { it.applied }
         // When injection didn't reach the agent, the likeliest cause on Samsung/Knox is SELinux:
         // either setenforce 0 was blocked by RKP (still Enforcing) or something else killed the
@@ -72,14 +80,17 @@ object Injector {
         }
         val summary = when {
             agentError != null -> "Agent error: $agentError"
+            reused ->
+                "FLAG_SECURE disabled — reused this boot's injection (screenshots allowed again)."
             injectorFailed && !ready -> "Injection failed before the agent ran (see log).$selinuxHint"
             !ready && hooks.isEmpty() ->
                 "No output from the agent — injection did not reach system_server.$selinuxHint"
             appliedCount == 0 -> "Injected, but no hooks applied — Android version may differ."
-            else -> "FLAG_SECURE disabled: $appliedCount hook(s) active until reboot."
+            else -> "FLAG_SECURE disabled: $appliedCount hook(s) active. " +
+                "Toggle it with the buttons — no reboot needed."
         }
         return Result(
-            success = agentError == null && ready && appliedCount > 0,
+            success = agentError == null && ready && (appliedCount > 0 || reused),
             summary = summary,
             hooks = hooks,
             log = output.trim(),
@@ -114,9 +125,16 @@ object Injector {
         // reboot) and report whether it actually took — on Knox/RKP setenforce 0 can be ignored.
         // On failure we also dump recent AVC denials so the real block is visible.
         // ${'$'} emits a literal shell '$' (Kotlin would otherwise read it as a string template).
+        // Removing the pause flag makes the (already-loaded) agent resume the bypass instantly.
+        // We only re-inject once per boot: a marker holding the current boot_id lets a second tap
+        // this boot just report "reused" instead of stacking another eternalized agent.
         val d = "${'$'}"
         val outFile = "/data/local/tmp/fso_frida.out"
         val cmd = buildString {
+            append("rm -f '$PAUSE_FILE'; ")
+            append("CUR=${d}(cat /proc/sys/kernel/random/boot_id 2>/dev/null); ")
+            append("if [ -n \"${d}CUR\" ] && [ \"${d}(cat '$BOOT_MARKER' 2>/dev/null)\" = \"${d}CUR\" ]; then ")
+            append("echo fso:reused; echo fso:ready; exit 0; fi; ")
             append("echo \"fso:selinux-before ${d}(getenforce 2>/dev/null)\"; ")
             append("setenforce 0 2>/dev/null; ")
             append("echo \"fso:selinux-after ${d}(getenforce 2>/dev/null)\"; ")
@@ -124,7 +142,7 @@ object Injector {
             append("if [ -z \"${d}PID\" ]; then echo 'fso:error system_server not found'; exit 3; fi; ")
             append("'${binary.path}' -p \"${d}PID\" -s '${agent.path}' -e > '$outFile' 2>&1; ")
             append("cat '$outFile'; ")
-            append("if ! grep -q fso:ready '$outFile'; then ")
+            append("if grep -q fso:ready '$outFile'; then echo \"${d}CUR\" > '$BOOT_MARKER'; else ")
             append("echo '--- recent SELinux denials ---'; ")
             append("{ logcat -d -b all -t 500 2>/dev/null; dmesg 2>/dev/null; } ")
             append("| grep -iE 'avc: *denied|frida|system_server' | tail -25; fi; ")
@@ -145,17 +163,30 @@ object Injector {
     }
 
     /**
-     * Re-enable FLAG_SECURE by restarting the Android framework. The eternalized Frida hooks live
-     * inside system_server and cannot be cleanly unloaded, so the only reliable revert short of a
-     * full reboot is a framework restart ("soft reboot"): `stop; start` tears down and relaunches
-     * system_server and every app (this one included), ~10–20s, after which the original
-     * FLAG_SECURE behavior is back. Fired detached because this process is killed mid-call.
+     * Re-enable FLAG_SECURE instantly, with no restart. Creating the pause flag makes the loaded
+     * agent defer to the original methods within ~0.5s, restoring true FLAG_SECURE behavior. If the
+     * agent was never injected this boot, the flag is harmless (FLAG_SECURE is already enforced).
+     * Tap "Disable" again to resume the bypass — also instant.
      */
-    suspend fun restore(): Unit = withContext(Dispatchers.IO) {
-        runCatching {
-            ProcessBuilder("su", "-c", "nohup sh -c 'sleep 1; stop; start' >/dev/null 2>&1 &").start()
-        }
-        Unit
+    suspend fun reEnable(): Result = withContext(Dispatchers.IO) {
+        runCatching { runSu("touch '$PAUSE_FILE' && echo ok") }.fold(
+            onSuccess = {
+                if (it.contains("ok")) {
+                    Result(
+                        success = true,
+                        summary = "FLAG_SECURE re-enabled — screenshots are blocked again within a " +
+                            "moment. No reboot needed; tap Disable to allow them again.",
+                        hooks = emptyList(),
+                        log = "",
+                    )
+                } else {
+                    Result(false, "Could not set the pause flag (see log).", emptyList(), it.trim())
+                }
+            },
+            onFailure = {
+                Result(false, "Could not run su — is root granted? (${it.message})", emptyList(), "")
+            },
+        )
     }
 
     /** Run one command in a root shell and return its combined output. */

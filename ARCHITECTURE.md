@@ -12,8 +12,11 @@ LSPosed module, for devices (e.g. Galaxy Z Fold7 on One UI 8) where Zygisk does 
    A JavaScript Frida script. When loaded into a process it:
    - finds the class loader that owns `com.android.server.wm.WindowState` (the `system_server`
      framework loader);
-   - replaces a set of window-manager methods so every window is treated as non-secure. The targets
-     are taken from `LSPosed/DisableFlagSecure`:
+   - replaces a set of window-manager methods. Each replacement is **toggleable**: while the pause
+     flag file `/data/local/tmp/fso_paused` is absent the method returns the bypass value (window
+     treated as non-secure); while it is present the method defers to the original (true
+     FLAG_SECURE behavior). The agent polls the flag every 500 ms, so FLAG_SECURE can be turned on
+     and off with no framework restart. The targets are taken from `LSPosed/DisableFlagSecure`:
      - `WindowState.isSecureLocked` → `false`
      - `WmScreenshotController.canBeScreenshotTarget` → `true` (One UI path)
      - `ScreenCaptureInternal$ScreenshotHardwareBuffer.containsSecureLayers` → `false` (Android 16+)
@@ -32,8 +35,9 @@ LSPosed module, for devices (e.g. Galaxy Z Fold7 on One UI 8) where Zygisk does 
      the parsed hook results.
    - `Injector` — the only code that touches root:
      - `hasRoot()` runs `su -c id -u` and checks for uid 0.
-     - `restore()` re-enables FLAG_SECURE by restarting the framework (`su -c 'stop; start'`,
-       detached): eternalized hooks can't be unloaded, so a soft reboot is the clean revert.
+     - `reEnable()` re-enables FLAG_SECURE instantly by creating the pause flag file
+       (`/data/local/tmp/fso_paused`); the loaded agent sees it within ~0.5s and defers to the
+       original methods. No restart.
      - `apply()` copies `agent.js` from assets into `filesDir`, locates
        `nativeLibraryDir/libfridainject.so`, then runs, via `su -c`:
        `PID=$(pidof system_server); libfridainject.so -p "$PID" -s agent.js -e`

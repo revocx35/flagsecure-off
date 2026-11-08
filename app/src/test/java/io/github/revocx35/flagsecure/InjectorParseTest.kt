@@ -86,6 +86,18 @@ class InjectorParseTest {
     }
 
     @Test
+    fun reusedInjectionIsSuccessWithoutHooks() {
+        val out = """
+            fso:reused
+            fso:ready
+        """.trimIndent()
+        val r = Injector.parseAgentOutput(out)
+        assertTrue(r.success)
+        assertTrue(r.hooks.isEmpty())
+        assertTrue(r.summary.contains("reused"))
+    }
+
+    @Test
     fun ignoresNonFsoNoise() {
         val out = """
             Spawned system_server

@@ -11,8 +11,9 @@ with KernelSU). Instead of an Xposed module, it injects a Frida agent into `syst
 root shell.
 
 > **Root required.** Use only on a device you own. This does **not** defeat hardware DRM
-> (Widevine L1), so paid-video apps (Netflix, etc.) stay black. The effect lasts until the next
-> reboot — open the app and tap again afterwards.
+> (Widevine L1), so paid-video apps (Netflix, etc.) stay black. Once injected, the two buttons
+> toggle FLAG_SECURE off and on **instantly** (no reboot). The agent clears on reboot — open the
+> app and tap Disable again afterwards.
 
 ## How it works
 
@@ -27,7 +28,8 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the design and [AGENTS.md](AGENTS.md)
 
 Download the APK for your device's ABI (**arm64-v8a** for phones) from
 [Releases](../../releases), install it, open it, and **grant it root** when your root manager
-prompts. Then tap **Disable FLAG_SECURE now**. Re-open and tap again after each reboot.
+prompts. Then tap **Disable FLAG_SECURE now**. After that, the two buttons toggle it off/on
+instantly; re-inject (tap Disable) once after each reboot.
 
 ## Build from source
 
