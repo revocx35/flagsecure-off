@@ -18,17 +18,13 @@ object Injector {
     private const val AGENT_ASSET = "agent.js"
     private const val BINARY_NAME = "libfridainject.so"
 
-    // The bypass is "on" exactly while our frida-inject stays attached to system_server. Its PID is
-    // kept here; turning off SIGTERMs it, which makes frida unload the agent and restore the
-    // original methods (no residual overhead). The .out file holds the injector's log for parsing.
-    private const val PID_FILE = "/data/local/tmp/fso.pid"
-    private const val OUT_FILE = "/data/local/tmp/fso.out"
+    // The eternalized agent stays resident in system_server and polls this flag every 500 ms:
+    // present => it REMOVES the hooks (FLAG_SECURE enforced, zero overhead); absent => hooks on.
+    private const val PAUSE_FILE = "/data/local/tmp/fso_paused"
 
-    // Shell snippet: succeeds only if PID_FILE names a live process that is really our injector
-    // (guards against PID reuse after a reboot). Depends on $d expanding to a literal '$'.
-    private fun ours(d: String) =
-        "P=${d}(cat '$PID_FILE' 2>/dev/null); [ -n \"${d}P\" ] && " +
-            "grep -qa fridainject /proc/${d}P/cmdline 2>/dev/null"
+    // Holds the boot_id we injected on, so we eternalize at most once per boot (a second tap just
+    // flips the flag). Cleared implicitly on reboot because boot_id changes.
+    private const val BOOT_MARKER = "/data/local/tmp/fso_boot"
 
     data class Hook(val target: String, val applied: Boolean)
 
@@ -109,7 +105,11 @@ object Injector {
     suspend fun isActive(): Boolean = withContext(Dispatchers.IO) {
         val d = "${'$'}"
         runCatching {
-            val out = runSu("if ${ours(d)}; then echo ACTIVE; else echo INACTIVE; fi")
+            val out = runSu(
+                "CUR=${d}(cat /proc/sys/kernel/random/boot_id 2>/dev/null); " +
+                    "if [ -n \"${d}CUR\" ] && [ \"${d}(cat '$BOOT_MARKER' 2>/dev/null)\" = \"${d}CUR\" ] " +
+                    "&& [ ! -e '$PAUSE_FILE' ]; then echo ACTIVE; else echo INACTIVE; fi",
+            )
             out.lineSequence().any { it.trim() == "ACTIVE" }
         }.getOrDefault(false)
     }
@@ -142,31 +142,28 @@ object Injector {
         // reboot) and report whether it actually took — on Knox/RKP setenforce 0 can be ignored.
         // On failure we also dump recent AVC denials so the real block is visible.
         // ${'$'} emits a literal shell '$' (Kotlin would otherwise read it as a string template).
-        // Inject once and keep frida-inject attached in the background (NOT eternalized), so turning
-        // off can SIGTERM it and cleanly revert. If it is already attached this boot, report reused.
+        // Eternalize the agent (proven reliable): frida-inject injects, the script stays resident
+        // and exits. Removing the pause flag first makes an already-injected agent go active within
+        // ~0.5s; a boot_id marker lets a second tap this boot skip re-injecting.
         val d = "${'$'}"
         val cmd = buildString {
-            append("if ${ours(d)}; then echo fso:reused; echo fso:ready; exit 0; fi; ")
+            append("rm -f '$PAUSE_FILE'; ")
+            append("CUR=${d}(cat /proc/sys/kernel/random/boot_id 2>/dev/null); ")
+            append("if [ -n \"${d}CUR\" ] && [ \"${d}(cat '$BOOT_MARKER' 2>/dev/null)\" = \"${d}CUR\" ]; then ")
+            append("echo fso:reused; echo fso:ready; exit 0; fi; ")
             append("echo \"fso:selinux-before ${d}(getenforce 2>/dev/null)\"; ")
             append("setenforce 0 2>/dev/null; ")
             append("echo \"fso:selinux-after ${d}(getenforce 2>/dev/null)\"; ")
             append("SS=${d}(pidof system_server); ")
             append("if [ -z \"${d}SS\" ]; then echo 'fso:error system_server not found'; exit 3; fi; ")
-            append(": > '$OUT_FILE'; ")
-            // detached, stdin from /dev/null so frida-inject does not read it and stays running
-            append("nohup '${binary.path}' -p \"${d}SS\" -s '${agent.path}' >> '$OUT_FILE' 2>&1 </dev/null & ")
-            append("echo ${d}! > '$PID_FILE'; ")
-            append("for i in ${d}(seq 1 60); do ")
-            append("grep -q fso:ready '$OUT_FILE' && break; ")
-            append("grep -qiE 'closed unexpectedly|unable to|error|denied' '$OUT_FILE' && break; ")
-            append("kill -0 ${d}(cat '$PID_FILE') 2>/dev/null || break; ")
-            append("sleep 0.25; done; ")
-            append("cat '$OUT_FILE'; ")
-            append("if ! grep -q fso:ready '$OUT_FILE'; then ")
-            append("echo '--- recent SELinux denials ---'; ")
-            append("{ logcat -d -b all -t 500 2>/dev/null; dmesg 2>/dev/null; } ")
-            append("| grep -iE 'avc: *denied|frida|system_server' | tail -25; ")
-            append("kill -TERM ${d}(cat '$PID_FILE') 2>/dev/null; rm -f '$PID_FILE'; fi")
+            append("O=/data/local/tmp/fso.out; : > \"${d}O\"; ")
+            append("'${binary.path}' -p \"${d}SS\" -s '${agent.path}' -e > \"${d}O\" 2>&1; ")
+            append("cat \"${d}O\"; ")
+            append("if grep -q fso:ready \"${d}O\"; then echo \"${d}CUR\" > '$BOOT_MARKER'; else ")
+            append("echo '--- logcat (frida / denials / signals) ---'; ")
+            append("logcat -d -b main -b system -t 400 2>/dev/null ")
+            append("| grep -iE 'avc: *denied|frida|seccomp|fortify|SIGSYS|abort' | tail -20; fi; ")
+            append("rm -f \"${d}O\"")
         }
         val out = runCatching { runSu(cmd) }
         out.fold(
@@ -183,13 +180,12 @@ object Injector {
     }
 
     /**
-     * Re-enable FLAG_SECURE instantly and cleanly: SIGTERM our frida-inject so frida unloads the
-     * agent and restores the original methods. Nothing stays hooked, so there is no residual
-     * slowdown. Harmless if nothing is attached. No reboot.
+     * Re-enable FLAG_SECURE instantly and cleanly: create the pause flag. The resident agent sees
+     * it within ~0.5s and REMOVES its hooks (implementation = null), restoring the original methods
+     * — so there is no residual slowdown. Harmless if nothing is injected. No reboot.
      */
     suspend fun reEnable(): Result = withContext(Dispatchers.IO) {
-        val d = "${'$'}"
-        val cmd = "if ${ours(d)}; then kill -TERM \"${d}P\" 2>/dev/null; fi; rm -f '$PID_FILE'; echo ok"
+        val cmd = "touch '$PAUSE_FILE' && echo ok"
         runCatching { runSu(cmd) }.fold(
             onSuccess = {
                 if (it.contains("ok")) {

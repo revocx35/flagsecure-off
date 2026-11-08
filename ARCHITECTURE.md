@@ -12,11 +12,12 @@ LSPosed module, for devices (e.g. Galaxy Z Fold7 on One UI 8) where Zygisk does 
    A JavaScript Frida script. When loaded into a process it:
    - finds the class loader that owns `com.android.server.wm.WindowState` (the `system_server`
      framework loader);
-   - replaces a set of window-manager methods with constant returns so every window is treated as
-     non-secure. The agent is **not** eternalized: frida-inject stays attached while the bypass is
-     on; turning off SIGTERMs it, and frida then unloads the script and **restores the original
-     methods**, so nothing stays hooked (no residual overhead). The targets are taken from
-     `LSPosed/DisableFlagSecure`:
+   - is **eternalized** (frida-inject injects it and exits; the script stays resident in
+     system_server — verified that its timer keeps running). It hooks a set of window-manager
+     methods with constant returns, and polls a pause flag every 500 ms: when the flag appears it
+     sets each hook's `implementation = null`, which **removes** the hook and restores the original
+     method (zero Frida overhead on the hot `isSecureLocked` path while off); when it is removed the
+     hooks go back on. The targets are taken from `LSPosed/DisableFlagSecure`:
      - `WindowState.isSecureLocked` → `false`
      - `WmScreenshotController.canBeScreenshotTarget` → `true` (One UI path)
      - `ScreenCaptureInternal$ScreenshotHardwareBuffer.containsSecureLayers` → `false` (Android 16+)
@@ -35,12 +36,12 @@ LSPosed module, for devices (e.g. Galaxy Z Fold7 on One UI 8) where Zygisk does 
      the parsed hook results.
    - `Injector` — the only code that touches root:
      - `hasRoot()` runs `su -c id -u` and checks for uid 0.
-     - `apply()` injects and keeps frida-inject attached in the background (its PID in
-       `/data/local/tmp/fso.pid`); a second tap while already attached reports `fso:reused`.
-     - `reEnable()` turns it off by SIGTERMing that PID, so frida reverts the hooks — clean, no
-       residual overhead, no restart.
-     - `isActive()` reports whether our injector is still attached (PID alive and its cmdline is
-       frida-inject, guarding against PID reuse).
+     - `apply()` eternalizes the agent (`frida-inject -e`) and removes the pause flag; a boot_id
+       marker (`/data/local/tmp/fso_boot`) means it injects at most once per boot (a later tap just
+       flips the flag). `fso:reused` on a repeat tap this boot.
+     - `reEnable()` turns it off by creating the pause flag; the resident agent removes its hooks
+       within ~0.5s. No restart, no residual overhead.
+     - `isActive()` reports on when the boot marker matches this boot and the pause flag is absent.
      - `apply()` copies `agent.js` from assets into `filesDir`, locates
        `nativeLibraryDir/libfridainject.so`, then runs, via `su -c`:
        `PID=$(pidof system_server); libfridainject.so -p "$PID" -s agent.js -e`

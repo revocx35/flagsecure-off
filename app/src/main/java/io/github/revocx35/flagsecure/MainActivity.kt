@@ -79,9 +79,9 @@ private fun ScreenContent(modifier: Modifier = Modifier) {
         Text(
             text = "Injects a Frida agent into system_server so the window manager ignores " +
                 "FLAG_SECURE. Screenshots and screen recording then work in apps that block them. " +
-                "Turning it off fully removes the hooks (no leftover slowdown); turning it on " +
-                "injects again (a few seconds). No reboot either way. There's also a " +
-                "\"FLAG_SECURE off\" Quick Settings tile — add it from the shade editor.",
+                "Turning it off removes the hooks (no leftover slowdown); turning it on is instant " +
+                "after the first injection. No reboot. There's also a \"FLAG_SECURE off\" Quick " +
+                "Settings tile — add it from the shade editor. Re-inject once after each reboot.",
             style = MaterialTheme.typography.bodyMedium,
         )
 

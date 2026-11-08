@@ -88,8 +88,10 @@ ABI** (arm64-v8a for phones, x86_64 for emulators); no universal APK, because fr
   as a string template and the build fails with "Unresolved reference 'PID'".
 - The emulator boots slowly under `heavy`; poll `adb shell getprop sys.boot_completed` rather than
   trusting a fixed timeout.
-- The bypass is on exactly while frida-inject stays attached (NOT eternalized). Turning off
-  SIGTERMs it so frida reverts the hooks — that clean revert is what removes the residual lag of
-  hooking a hot method (`isSecureLocked`). Do not add `-e`; it would leave hooks installed.
+- Injection uses `frida-inject -e` (eternalize): reliable, and the resident script's 500 ms timer
+  keeps running (verified). Off/on is a pause flag the agent polls; on pause it sets each hook's
+  `implementation = null` (a real un-hook), which is what removes the residual lag of hooking the
+  hot `isSecureLocked`. Do NOT switch to a non-eternalized persistent frida-inject session — it
+  forks/detaches unreliably and broke injection in v1.2.0.
 - A quick-settings tile (`FlagSecureTileService`) toggles the same state from the shade.
 - DRM video (Widevine L1) is a separate hardware path; this app does not and cannot capture it.
