@@ -14,6 +14,8 @@ val keystoreProps = Properties().apply {
 
 android {
     namespace = "io.github.revocx35.flagsecure"
+    // 37 is required: the AndroidX/Compose libs in use declare minCompileSdk 37. The app still
+    // runs on the owner's Android 16 (API 36) Fold7 and down to minSdk 26.
     compileSdk = 37
 
     defaultConfig {

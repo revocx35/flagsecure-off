@@ -11,6 +11,8 @@ jobs:
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: '17' }
       - uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools platforms;android-37.0 build-tools;36.0.0"
       - uses: actions/setup-node@v4
         with: { node-version: '20' }
       - name: Build Frida agent
