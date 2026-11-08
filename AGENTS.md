@@ -84,6 +84,10 @@ ABI** (arm64-v8a for phones, x86_64 for emulators); no universal APK, because fr
 
 ## Gotchas
 
+- Local builds on this host: a JRE-only `java-25` is installed and Gradle may auto-pick it
+  (`Toolchain ... does not provide ... JAVA_COMPILER`). Build with
+  `JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64`. CI is unaffected (setup-java provides a JDK).
+
 - Shell `$` inside Kotlin strings must be written `${'$'}` (see `Injector.kt`), or Kotlin reads it
   as a string template and the build fails with "Unresolved reference 'PID'".
 - The emulator boots slowly under `heavy`; poll `adb shell getprop sys.boot_completed` rather than
@@ -94,4 +98,7 @@ ABI** (arm64-v8a for phones, x86_64 for emulators); no universal APK, because fr
   hot `isSecureLocked`. Do NOT switch to a non-eternalized persistent frida-inject session — it
   forks/detaches unreliably and broke injection in v1.2.0.
 - A quick-settings tile (`FlagSecureTileService`) toggles the same state from the shade.
+- Do NOT hook `WindowState.isSecureLocked`: it is per-frame hot and ART deoptimizes it
+  permanently when hooked, so it stays slow even after un-hook (the residual-lag cause). The agent
+  hooks only capture-path methods. Re-adding it (for apps that still black out) brings the lag back.
 - DRM video (Widevine L1) is a separate hardware path; this app does not and cannot capture it.

@@ -17,11 +17,17 @@ LSPosed module, for devices (e.g. Galaxy Z Fold7 on One UI 8) where Zygisk does 
      methods with constant returns, and polls a pause flag every 500 ms: when the flag appears it
      sets each hook's `implementation = null`, which **removes** the hook and restores the original
      method (zero Frida overhead on the hot `isSecureLocked` path while off); when it is removed the
-     hooks go back on. The targets are taken from `LSPosed/DisableFlagSecure`:
-     - `WindowState.isSecureLocked` → `false`
+     hooks go back on. The targets are a subset of `LSPosed/DisableFlagSecure`:
      - `WmScreenshotController.canBeScreenshotTarget` → `true` (One UI path)
      - `ScreenCaptureInternal$ScreenshotHardwareBuffer.containsSecureLayers` → `false` (Android 16+)
      - `ScreenCapture$ScreenshotHardwareBuffer.containsSecureLayers` → `false` (Android 14–15)
+   - **`WindowState.isSecureLocked` is intentionally NOT hooked.** It is called per-frame during
+     window relayout, and hooking it makes ART permanently deoptimize it (slow even after the hook
+     is removed) — that was the residual lag. The remaining hooks are on capture paths only (called
+     when a screenshot is actually taken), so they cost nothing per frame and never deoptimize a hot
+     method. Trade-off: this defeats screenshots; it may not blank-defeat screen recording or
+     recents thumbnails the way `isSecureLocked` would. If an app still blacks out, the options are
+     to re-add `isSecureLocked` (accepting the lag) or patch `services.jar`.
    - Classes that do not exist on the running Android version are skipped, not fatal.
    - Emits machine-readable progress on stdout: `fso:hooked <t>`, `fso:skipped <t>`, `fso:ready`,
      `fso:error <msg>`.
