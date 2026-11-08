@@ -40,11 +40,17 @@ object Injector {
         val hooks = mutableListOf<Hook>()
         var ready = false
         var agentError: String? = null
+        var selinuxBefore: String? = null
+        var selinuxAfter: String? = null
         for (raw in output.lineSequence()) {
             val line = raw.trim()
             when {
                 line == "fso:ready" -> ready = true
                 line.startsWith("fso:error") -> agentError = line.removePrefix("fso:error").trim()
+                line.startsWith("fso:selinux-before") ->
+                    selinuxBefore = line.removePrefix("fso:selinux-before").trim()
+                line.startsWith("fso:selinux-after") ->
+                    selinuxAfter = line.removePrefix("fso:selinux-after").trim()
                 else -> {
                     HOOKED.matchEntire(line)?.let { hooks += Hook(it.groupValues[1], true) }
                     SKIPPED.matchEntire(line)?.let { hooks += Hook(it.groupValues[1], false) }
@@ -52,10 +58,23 @@ object Injector {
             }
         }
         val appliedCount = hooks.count { it.applied }
+        // When injection didn't reach the agent, the likeliest cause on Samsung/Knox is SELinux:
+        // either setenforce 0 was blocked by RKP (still Enforcing) or something else killed the
+        // agent even while Permissive.
+        val selinuxHint = when {
+            !ready && selinuxAfter.equals("Enforcing", ignoreCase = true) ->
+                " SELinux is still Enforcing (setenforce 0 was blocked — Knox/RKP). Frida cannot " +
+                    "inject into system_server. A kernel-level SELinux rule is needed."
+            !ready && selinuxAfter.equals("Permissive", ignoreCase = true) ->
+                " SELinux is Permissive but the agent still died — likely a Knox/seccomp block " +
+                    "(see log)."
+            else -> ""
+        }
         val summary = when {
             agentError != null -> "Agent error: $agentError"
-            injectorFailed && !ready -> "Injection failed before the agent ran (see log)."
-            !ready && hooks.isEmpty() -> "No output from the agent — injection did not reach system_server."
+            injectorFailed && !ready -> "Injection failed before the agent ran (see log).$selinuxHint"
+            !ready && hooks.isEmpty() ->
+                "No output from the agent — injection did not reach system_server.$selinuxHint"
             appliedCount == 0 -> "Injected, but no hooks applied — Android version may differ."
             else -> "FLAG_SECURE disabled: $appliedCount hook(s) active until reboot."
         }
@@ -90,13 +109,26 @@ object Injector {
                 log = "",
             )
         }
-        // -e eternalizes the script so the hooks survive after frida-inject detaches and exits.
+        // Frida must load its agent into the system_server SELinux domain. On stock/Knox Android
+        // that is denied while enforcing, so we drop SELinux to permissive first (reverts on
+        // reboot) and report whether it actually took — on Knox/RKP setenforce 0 can be ignored.
+        // On failure we also dump recent AVC denials so the real block is visible.
         // ${'$'} emits a literal shell '$' (Kotlin would otherwise read it as a string template).
         val d = "${'$'}"
+        val outFile = "/data/local/tmp/fso_frida.out"
         val cmd = buildString {
+            append("echo \"fso:selinux-before ${d}(getenforce 2>/dev/null)\"; ")
+            append("setenforce 0 2>/dev/null; ")
+            append("echo \"fso:selinux-after ${d}(getenforce 2>/dev/null)\"; ")
             append("PID=${d}(pidof system_server); ")
             append("if [ -z \"${d}PID\" ]; then echo 'fso:error system_server not found'; exit 3; fi; ")
-            append("'${binary.path}' -p \"${d}PID\" -s '${agent.path}' -e 2>&1")
+            append("'${binary.path}' -p \"${d}PID\" -s '${agent.path}' -e > '$outFile' 2>&1; ")
+            append("cat '$outFile'; ")
+            append("if ! grep -q fso:ready '$outFile'; then ")
+            append("echo '--- recent SELinux denials ---'; ")
+            append("{ logcat -d -b all -t 500 2>/dev/null; dmesg 2>/dev/null; } ")
+            append("| grep -iE 'avc: *denied|frida|system_server' | tail -25; fi; ")
+            append("rm -f '$outFile'")
         }
         val out = runCatching { runSu(cmd) }
         out.fold(

@@ -26,3 +26,4 @@ keystore.properties
 .DS_Store
 *.log
 captures/
+*.apk

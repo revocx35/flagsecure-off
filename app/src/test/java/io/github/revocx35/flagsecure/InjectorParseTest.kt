@@ -47,6 +47,45 @@ class InjectorParseTest {
     }
 
     @Test
+    fun enforcingSelinuxGivesKnoxHint() {
+        val out = """
+            fso:selinux-before Enforcing
+            fso:selinux-after Enforcing
+            Unable to load SELinux policy from the kernel
+            Agent connection closed unexpectedly
+        """.trimIndent()
+        val r = Injector.parseAgentOutput(out)
+        assertFalse(r.success)
+        assertTrue(r.summary.contains("Enforcing"))
+        assertTrue(r.summary.contains("Knox/RKP"))
+    }
+
+    @Test
+    fun permissiveButFailedGivesDifferentHint() {
+        val out = """
+            fso:selinux-before Enforcing
+            fso:selinux-after Permissive
+            Agent connection closed unexpectedly
+        """.trimIndent()
+        val r = Injector.parseAgentOutput(out)
+        assertFalse(r.success)
+        assertTrue(r.summary.contains("Permissive"))
+    }
+
+    @Test
+    fun successIgnoresSelinuxLines() {
+        val out = """
+            fso:selinux-before Enforcing
+            fso:selinux-after Permissive
+            fso:hooked com.android.server.wm.WindowState.isSecureLocked
+            fso:ready
+        """.trimIndent()
+        val r = Injector.parseAgentOutput(out)
+        assertTrue(r.success)
+        assertEquals(1, r.hooks.size)
+    }
+
+    @Test
     fun ignoresNonFsoNoise() {
         val out = """
             Spawned system_server
