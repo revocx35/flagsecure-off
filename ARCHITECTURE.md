@@ -6,6 +6,24 @@ Disable `FLAG_SECURE` globally on a rooted Android device so screenshots and scr
 everywhere, **without** Zygisk/LSPosed. This is the no-Zygisk alternative to the `DisableFlagSecure`
 LSPosed module, for devices (e.g. Galaxy Z Fold7 on One UI 8) where Zygisk does not work.
 
+## Two variants
+
+This repo ships two independent ways to disable FLAG_SECURE, as separate APKs:
+
+- **Xposed module** (`:xposed`, package `io.github.revocx35.flagsecure.xposed`) — a standard
+  Xposed/LSPosed module. `XposedEntry` implements `IXposedHookLoadPackage`, and when the system
+  framework (`android`) loads it replaces the same window-manager methods with constant returns via
+  `XposedBridge.hookAllMethods` / `XC_MethodReplacement.returnConstant`. The Xposed hooking engine
+  (LSPlant) does **not** force ART to deoptimize the methods, so there is **no runtime lag** — this
+  is the recommended variant when an Xposed framework is available. Needs LSPosed (i.e. a working
+  Zygisk/ Zygisk-alternative); no root shell at runtime. The Xposed API is a `compileOnly`
+  dependency (provided by the framework), never packaged.
+- **Frida app** (`:app`) — the no-Zygisk fallback described below. Reliable injection, but hooking
+  the framework live makes ART deoptimize the hooked methods, which is laggy on some devices until
+  reboot. v1.3.x hooks only capture-path methods to limit this, with the trade-off noted above.
+
+The rest of this document describes the Frida app.
+
 ## Components
 
 1. **Frida agent** (`agent/index.js` → compiled to `app/src/main/assets/agent.js`)

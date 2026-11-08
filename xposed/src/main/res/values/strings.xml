@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">FLAG_SECURE off (Xposed)</string>
+    <string name="xposed_desc">Makes the window manager ignore FLAG_SECURE so screenshots and screen recording work everywhere. Scope: System Framework. Reboot after enabling.</string>
+</resources>

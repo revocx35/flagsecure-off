@@ -22,6 +22,10 @@ app/                     Android app module (Kotlin + Jetpack Compose)
     assets/agent.js        Compiled Frida agent (GENERATED from agent/ — not committed)
     jniLibs/<abi>/libfridainject.so   frida-inject binary (DOWNLOADED — not committed)
   src/test/.../InjectorParseTest.kt   JVM unit tests for the output parser
+xposed/                  Xposed/LSPosed module (separate APK, package .xposed) — the no-lag variant
+  src/main/assets/xposed_init          names the entry class
+  src/main/java/.../XposedEntry.kt     IXposedHookLoadPackage; hooks the system framework ("android")
+  src/main/java/.../StatusActivity.kt  status/instructions screen
 agent/                   Frida agent source (frida-compile project)
   index.js               The hooks; compiled to app/src/main/assets/agent.js
   package.json           `npm run build` -> frida-compile
@@ -48,6 +52,7 @@ scripts/fetch-frida.sh            # or set FRIDA_VERSION=...
 heavy ./gradlew :app:testDebugUnitTest   # JVM unit tests (parser)
 heavy ./gradlew :app:assembleDebug       # per-ABI debug APKs
 heavy ./gradlew :app:assembleRelease     # per-ABI release APKs (signed if keystore.properties)
+heavy ./gradlew :xposed:assembleRelease  # Xposed module APK (universal; no Frida needed to build)
 
 # 4. Smoke test on an emulator (install + launch only; see "never do")
 scripts/emulator.sh setup         # once

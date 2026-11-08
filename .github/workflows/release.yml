@@ -41,17 +41,24 @@ jobs:
             echo "signed=no" >> "$GITHUB_ENV"
           fi
       - name: Assemble release
-        run: ./gradlew :app:assembleRelease --console=plain
+        run: ./gradlew :app:assembleRelease :xposed:assembleRelease --console=plain
       - name: Collect APKs
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/release/app-*-release*.apk dist/ 2>/dev/null || \
-          cp app/build/outputs/apk/release/app-*-release-unsigned.apk dist/
+          # Frida root app (per-ABI)
+          cp app/build/outputs/apk/release/app-*-release*.apk dist/ 2>/dev/null || true
+          # Xposed/LSPosed module (universal) — rename for clarity on the release page
+          x=$(ls xposed/build/outputs/apk/release/xposed-release*.apk 2>/dev/null | head -1)
+          [ -n "$x" ] && cp "$x" "dist/flagsecure-off-xposed.apk"
           ls -la dist
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*.apk
           body: |
-            FLAG_SECURE disabler. Install the **arm64-v8a** APK on a phone and grant it root.
-            Signed: ${{ env.signed }}.
+            Two ways to disable FLAG_SECURE (your own rooted device only):
+            - **Xposed/LSPosed module** — `flagsecure-off-xposed.apk`. Enable in LSPosed, scope
+              System Framework, reboot. No lag. Recommended if you have Xposed.
+            - **Frida app** (no Xposed needed) — `app-arm64-v8a-release.apk`. Install, grant root,
+              tap. Works without Zygisk but has runtime overhead.
+            Neither defeats hardware DRM (Widevine L1). Signed: ${{ env.signed }}.

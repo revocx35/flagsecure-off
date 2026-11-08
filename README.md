@@ -5,10 +5,17 @@
 A one-tap Android app that turns off `FLAG_SECURE` **system-wide** on a rooted device, so
 screenshots and screen recording work in apps that block them — **without Zygisk or LSPosed**.
 
-It is the no-Zygisk alternative to the [DisableFlagSecure](https://github.com/LSPosed/DisableFlagSecure)
-LSPosed module, for devices where Zygisk is unavailable (e.g. Galaxy Z Fold7 on One UI 8 / Android 16
-with KernelSU). Instead of an Xposed module, it injects a Frida agent into `system_server` from a
-root shell.
+There are **two variants** in this repo:
+
+| | Mechanism | Needs | Lag | Install |
+|---|---|---|---|---|
+| **Xposed module** (recommended) | Xposed/LSPosed hooks in the system framework | an Xposed framework (LSPosed) | none | `flagsecure-off-xposed.apk` → enable in LSPosed, scope *System Framework*, reboot |
+| **Frida app** | Injects a Frida agent into `system_server` from a root shell | root only (no Zygisk/LSPosed) | runtime overhead¹ | `app-arm64-v8a-release.apk` → install, grant root, tap |
+
+¹ The Frida build hooks framework methods live, which makes ART deoptimize them — noticeable lag on
+some devices (e.g. One UI) that lasts until reboot. If you have an Xposed framework, use the Xposed
+module; its hooks don't deoptimize anything. Both are the no-store equivalent of
+[DisableFlagSecure](https://github.com/LSPosed/DisableFlagSecure).
 
 > **Root required.** Use only on a device you own. This does **not** defeat hardware DRM
 > (Widevine L1), so paid-video apps (Netflix, etc.) stay black. Once injected, the two buttons

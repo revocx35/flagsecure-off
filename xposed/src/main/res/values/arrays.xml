@@ -1,0 +1,8 @@
+<resources>
+    <!-- LSPosed scope: the system framework (does the real work) + this app itself (so the
+         status screen can detect that the module is active). -->
+    <string-array name="xposedscope">
+        <item>android</item>
+        <item>io.github.revocx35.flagsecure.xposed</item>
+    </string-array>
+</resources>

@@ -22,4 +22,4 @@ jobs:
       - name: Unit tests
         run: ./gradlew :app:testDebugUnitTest --console=plain
       - name: Assemble debug
-        run: ./gradlew :app:assembleDebug --console=plain
+        run: ./gradlew :app:assembleDebug :xposed:assembleDebug --console=plain
