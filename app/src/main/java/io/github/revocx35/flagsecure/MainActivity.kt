@@ -77,6 +77,11 @@ private fun ScreenContent(modifier: Modifier = Modifier) {
             style = MaterialTheme.typography.headlineSmall,
         )
         Text(
+            text = "Version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+            style = MaterialTheme.typography.labelMedium,
+            color = colorScheme.onSurfaceVariant,
+        )
+        Text(
             text = "Injects a Frida agent into system_server so the window manager ignores " +
                 "FLAG_SECURE. Screenshots and screen recording then work in apps that block them. " +
                 "Turning it off removes the hooks (no leftover slowdown); turning it on is instant " +

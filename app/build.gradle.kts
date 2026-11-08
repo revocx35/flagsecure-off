@@ -22,8 +22,8 @@ android {
         applicationId = "io.github.revocx35.flagsecure"
         minSdk = 26
         targetSdk = 37
-        versionCode = 8
-        versionName = "1.3.0"
+        versionCode = 9
+        versionName = "1.3.1"
     }
 
     signingConfigs {
